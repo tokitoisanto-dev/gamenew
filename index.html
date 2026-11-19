@@ -1,0 +1,1538 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Thung lũng Khởi Nguyên — Cảnh 3D Voxel tương tác và trình xuất file .GLB cho game xây dựng & quản lý khu vực." />
+  <title>Thung lũng Khởi Nguyên — 3D Voxel Diorama</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: rgba(15, 23, 42, 0.82);
+      --border: rgba(148, 163, 184, 0.22);
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #f59e0b;
+      --accent-text: #111827;
+      --hover: rgba(255, 255, 255, 0.09);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 13px;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+    .panel {
+      background: var(--card);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+    }
+    .top-left {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      z-index: 10;
+      border-radius: 12px;
+      padding: 10px 14px;
+      max-width: calc(100% - 24px);
+    }
+    .title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+      background: var(--accent);
+      display: inline-block;
+    }
+    h1 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .stats {
+      margin: 6px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+    .top-right {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      z-index: 10;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    button {
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 6px 11px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text);
+      background: transparent;
+      cursor: pointer;
+      transition: background 0.15s ease, transform 0.1s ease, opacity 0.15s ease;
+    }
+    button:hover { background: var(--hover); }
+    button:active { transform: scale(0.98); }
+    button.btn-surface {
+      background: var(--card);
+      border-color: var(--border);
+      backdrop-filter: blur(12px);
+    }
+    button.btn-surface:hover { background: rgba(30, 41, 59, 0.92); }
+    button.btn-primary, button.active {
+      background: var(--accent);
+      color: var(--accent-text);
+      font-weight: 600;
+    }
+    button.btn-primary:hover, button.active:hover {
+      background: var(--accent);
+      opacity: 0.92;
+    }
+    button.btn-outline {
+      border-color: var(--border);
+    }
+    .bottom-dock {
+      position: fixed;
+      bottom: 12px;
+      left: 12px;
+      right: 12px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      pointer-events: none;
+    }
+    .dock-bar {
+      pointer-events: auto;
+      border-radius: 16px;
+      padding: 10px 12px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 8px 14px;
+      max-width: 960px;
+    }
+    .group {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .group-label {
+      font-size: 12px;
+      color: var(--muted);
+      margin-right: 4px;
+    }
+    .divider {
+      width: 1px;
+      height: 16px;
+      background: var(--border);
+    }
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      padding: 4px 12px;
+      border-radius: 999px;
+    }
+    #toast {
+      position: fixed;
+      top: 60px;
+      right: 12px;
+      z-index: 20;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+    @media (max-width: 720px) {
+      .divider { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="glcanvas"></canvas>
+
+  <div class="panel top-left">
+    <div class="title-row">
+      <span class="dot"></span>
+      <h1>Thung lũng Khởi Nguyên (Voxel 3D)</h1>
+    </div>
+    <p id="stats-line" class="stats">Đang khởi tạo cảnh 3D...</p>
+  </div>
+
+  <div class="top-right">
+    <button id="btn-autorotate" type="button" class="btn-surface">Tự xoay: Bật</button>
+    <button id="btn-reset-cam" type="button" class="btn-surface">Đặt lại góc nhìn</button>
+    <button id="btn-export-glb" type="button" class="btn-primary">Xuất file .GLB</button>
+  </div>
+
+  <div id="toast" class="panel"></div>
+
+  <div class="bottom-dock">
+    <div class="panel dock-bar">
+      <div class="group">
+        <span class="group-label">Khu vực:</span>
+        <button data-stage="1" class="stage-btn">1. Khai hoang</button>
+        <button data-stage="2" class="stage-btn">2. Lập trại</button>
+        <button data-stage="3" class="stage-btn">3. Thị trấn</button>
+      </div>
+      <div class="divider"></div>
+      <div class="group">
+        <span class="group-label">Thời gian:</span>
+        <button data-time="morning" class="time-btn">Bình minh</button>
+        <button data-time="noon" class="time-btn">Ban trưa</button>
+        <button data-time="sunset" class="time-btn">Hoàng hôn</button>
+        <button data-time="night" class="time-btn">Đêm</button>
+      </div>
+      <div class="divider"></div>
+      <div class="group">
+        <span class="group-label">Công cụ:</span>
+        <button data-tool="orbit" class="tool-btn">Xoay xem</button>
+        <button data-tool="oak" class="tool-btn">Trồng Sồi</button>
+        <button data-tool="sakura" class="tool-btn">Trồng Anh Đào</button>
+        <button data-tool="lantern" class="tool-btn">Đặt Đèn</button>
+        <button id="btn-rebuild" type="button" class="btn-outline">Làm mới</button>
+      </div>
+    </div>
+    <div class="panel hint">
+      Kéo trái: Xoay 360° · Kéo phải / Shift+Kéo: Di chuyển · Cuộn: Phóng to / thu nhỏ
+    </div>
+  </div>
+
+  <script>
+    const GRID_X = 56, GRID_Y = 40, GRID_Z = 56;
+    const MAT = {
+      AIR: 0, GRASS: 1, DIRT: 2, STONE: 3, DARK_STONE: 4, SAND: 5, WATER: 6, FOAM: 7,
+      WOOD_LOG: 8, PLANK: 9, WOOD_DARK: 10, LEAF_OAK: 11, LEAF_PINE: 12, LEAF_SAKURA: 13,
+      ROOF_RED: 14, ROOF_THATCH: 15, WALL_CREAM: 16, COBBLE: 17, ORE_GOLD: 18, ORE_CRYSTAL: 19,
+      APPLE: 20, PUMPKIN: 21, WHEAT: 22, FLOWER: 23, EMBER: 24, LANTERN: 25, GLASS_LIT: 26,
+      SAIL_CLOTH: 27, TENT_CANVAS: 28, LILY_PAD: 29, SETTLER: 30,
+    };
+
+    function isEmissiveMat(m) {
+      return m === MAT.EMBER || m === MAT.LANTERN || m === MAT.GLASS_LIT || m === MAT.ORE_CRYSTAL;
+    }
+    function isOpaqueOccluder(m) {
+      return m !== MAT.AIR && m !== MAT.WATER;
+    }
+    function hash3(x, y, z) {
+      let h = (x * 374761393 + y * 668265263 + z * 2147483647) | 0;
+      h = ((h ^ (h >> 13)) * 1274126177) | 0;
+      return ((h ^ (h >> 16)) >>> 0) / 4294967296;
+    }
+    function jitterHex(hex, amt, x, y, z) {
+      const n = (hash3(x, y, z) - 0.5) * 2 * amt;
+      const r = Math.max(0, Math.min(255, ((hex >> 16) & 255) + Math.round(n * 255)));
+      const g = Math.max(0, Math.min(255, ((hex >> 8) & 255) + Math.round(n * 255)));
+      const b = Math.max(0, Math.min(255, (hex & 255) + Math.round(n * 255)));
+      return (r << 16) | (g << 8) | b;
+    }
+
+    const PALETTE = {
+      [MAT.GRASS]: 0x6ab04c, [MAT.DIRT]: 0x7f5539, [MAT.STONE]: 0x8d99ae, [MAT.DARK_STONE]: 0x4a5568,
+      [MAT.SAND]: 0xe6ccb2, [MAT.WATER]: 0x2ec4b6, [MAT.FOAM]: 0xdff9fb, [MAT.WOOD_LOG]: 0x6f4518,
+      [MAT.PLANK]: 0xc68b59, [MAT.WOOD_DARK]: 0x432818, [MAT.LEAF_OAK]: 0x4f9d4a, [MAT.LEAF_PINE]: 0x2d6a4f,
+      [MAT.LEAF_SAKURA]: 0xffb3c6, [MAT.ROOF_RED]: 0xc84b31, [MAT.ROOF_THATCH]: 0xe0a96d, [MAT.WALL_CREAM]: 0xf4ede2,
+      [MAT.COBBLE]: 0x9c958d, [MAT.ORE_GOLD]: 0xf9c74f, [MAT.ORE_CRYSTAL]: 0x48cae4, [MAT.APPLE]: 0xe63946,
+      [MAT.PUMPKIN]: 0xf77f00, [MAT.WHEAT]: 0xe9c46a, [MAT.FLOWER]: 0xffd166, [MAT.EMBER]: 0xff6b35,
+      [MAT.LANTERN]: 0xffd166, [MAT.GLASS_LIT]: 0xffbe5c, [MAT.SAIL_CLOTH]: 0xf8f4ec, [MAT.TENT_CANVAS]: 0xe07a5f,
+      [MAT.LILY_PAD]: 0x52b788, [MAT.SETTLER]: 0xf4a261,
+    };
+
+    class VoxelGrid {
+      constructor(sx = GRID_X, sy = GRID_Y, sz = GRID_Z) {
+        this.sx = sx; this.sy = sy; this.sz = sz;
+        const len = sx * sy * sz;
+        this.mat = new Uint8Array(len);
+        this.col = new Uint32Array(len);
+        this.light = new Uint8Array(len * 3);
+      }
+      idx(x, y, z) { return x + this.sx * (z + this.sz * y); }
+      inBounds(x, y, z) { return x >= 0 && x < this.sx && y >= 0 && y < this.sy && z >= 0 && z < this.sz; }
+      get(x, y, z) { return this.inBounds(x, y, z) ? this.mat[this.idx(x, y, z)] : MAT.AIR; }
+      getCol(x, y, z) { return this.inBounds(x, y, z) ? this.col[this.idx(x, y, z)] : 0xffffff; }
+      set(x, y, z, m, customHex = null, jitter = 0.04) {
+        x = Math.round(x); y = Math.round(y); z = Math.round(z);
+        if (!this.inBounds(x, y, z)) return;
+        const i = this.idx(x, y, z);
+        this.mat[i] = m;
+        if (m === MAT.AIR) { this.col[i] = 0; return; }
+        const base = customHex !== null ? customHex : (PALETTE[m] ?? 0xffffff);
+        this.col[i] = jitter > 0 ? jitterHex(base, jitter, x, y, z) : base;
+      }
+      fillBox(x0, y0, z0, x1, y1, z1, m, customHex = null, jitter = 0.035) {
+        for (let y = y0; y <= y1; y++)
+          for (let z = z0; z <= z1; z++)
+            for (let x = x0; x <= x1; x++)
+              this.set(x, y, z, m, customHex, jitter);
+      }
+      countSolid() {
+        let c = 0;
+        for (let i = 0; i < this.mat.length; i++) if (this.mat[i] !== MAT.AIR) c++;
+        return c;
+      }
+    }
+
+    function plantOakTree(grid, tx, ty, tz, scale = 1.0, withApples = false) {
+      const trunkH = Math.max(3, Math.round(4 * scale));
+      for (let y = 0; y < trunkH; y++) grid.set(tx, ty + y, tz, MAT.WOOD_LOG, 0x6f4518, 0.04);
+      if (scale >= 1.15) {
+        grid.set(tx + 1, ty, tz, MAT.WOOD_LOG, 0x5c3712, 0.03);
+        grid.set(tx - 1, ty, tz, MAT.WOOD_LOG, 0x5c3712, 0.03);
+      }
+      const cy = ty + trunkH + 1;
+      const r = Math.max(2, Math.round(2.4 * scale));
+      for (let dy = -r + 1; dy <= r; dy++) {
+        for (let dz = -r; dz <= r; dz++) {
+          for (let dx = -r; dx <= r; dx++) {
+            const d2 = dx * dx + dy * dy * 1.25 + dz * dz;
+            const maxR = r * r + 0.6;
+            if (d2 <= maxR) {
+              if (dy === r && Math.abs(dx) === r) continue;
+              const n = hash3(tx + dx, cy + dy, tz + dz);
+              if (d2 > maxR - 1.2 && n < 0.28) continue;
+              const leafHex = dy > 0 ? 0x6ab04c : 0x458b3c;
+              if (withApples && dy <= 0 && d2 > maxR - 2.3 && n > 0.87) {
+                grid.set(tx + dx, cy + dy, tz + dz, MAT.APPLE, 0xe63946, 0.03);
+              } else {
+                grid.set(tx + dx, cy + dy, tz + dz, MAT.LEAF_OAK, leafHex, 0.055);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    function plantPineTree(grid, tx, ty, tz, height = 9) {
+      for (let y = 0; y < height - 2; y++) grid.set(tx, ty + y, tz, MAT.WOOD_LOG, 0x543310, 0.03);
+      const startY = ty + 2, tiers = height - 2;
+      for (let i = 0; i < tiers; i++) {
+        const y = startY + i;
+        const rad = Math.max(0, Math.round(((tiers - i) / tiers) * 2.8));
+        for (let dz = -rad; dz <= rad; dz++) {
+          for (let dx = -rad; dx <= rad; dx++) {
+            if (Math.abs(dx) + Math.abs(dz) <= rad + (i % 2 === 0 ? 1 : 0)) {
+              if (Math.abs(dx) === rad && Math.abs(dz) === rad && rad > 1) continue;
+              grid.set(tx + dx, y, tz + dz, MAT.LEAF_PINE, i >= tiers - 2 ? 0x40916c : 0x2d6a4f, 0.045);
+            }
+          }
+        }
+      }
+      grid.set(tx, startY + tiers, tz, MAT.LEAF_PINE, 0x52b788, 0.03);
+    }
+
+    function plantSakuraTree(grid, tx, ty, tz) {
+      for (let y = 0; y < 4; y++) grid.set(tx, ty + y, tz, MAT.WOOD_DARK, 0x4e342e, 0.03);
+      grid.set(tx + 1, ty + 3, tz, MAT.WOOD_DARK, 0x4e342e, 0.03);
+      grid.set(tx - 1, ty + 4, tz + 1, MAT.WOOD_DARK, 0x4e342e, 0.03);
+      const blobs = [[0, 6, 0, 2.7], [2, 5, 0, 2.1], [-2, 5, 1, 2.1], [0, 5, -2, 1.9]];
+      for (const [bx, by, bz, r] of blobs) {
+        const ir = Math.ceil(r);
+        for (let dy = -ir; dy <= ir; dy++) {
+          for (let dz = -ir; dz <= ir; dz++) {
+            for (let dx = -ir; dx <= ir; dx++) {
+              const d2 = dx * dx + dy * dy * 1.4 + dz * dz;
+              if (d2 <= r * r) {
+                const n = hash3(tx + bx + dx, ty + by + dy, tz + bz + dz);
+                if (d2 > r * r - 1.0 && n < 0.25) continue;
+                const hex = n > 0.55 ? 0xffccd5 : n > 0.2 ? 0xffb3c6 : 0xff8fab;
+                grid.set(tx + bx + dx, ty + by + dy, tz + bz + dz, MAT.LEAF_SAKURA, hex, 0.03);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    function plantSapling(grid, x, y, z) {
+      grid.set(x, y, z, MAT.WOOD_LOG, 0x6f4518, 0.03);
+      grid.set(x, y + 1, z, MAT.LEAF_OAK, 0x80ed99, 0.05);
+      grid.set(x + 1, y + 1, z, MAT.LEAF_OAK, 0x6ab04c, 0.05);
+      grid.set(x, y + 2, z, MAT.LEAF_OAK, 0x80ed99, 0.05);
+    }
+
+    function buildTent(grid, x0, y0, z0) {
+      for (let z = 0; z < 6; z++) {
+        for (let y = 0; y < 4; y++) {
+          const halfW = 2 - Math.floor(y / 1.4);
+          for (let dx = -halfW; dx <= halfW; dx++) {
+            const isEdge = Math.abs(dx) === halfW || y === 3;
+            if (!isEdge && z > 0 && z < 5) continue;
+            if (z === 0 && dx === 0 && y < 2) continue;
+            grid.set(x0 + dx, y0 + y, z0 + z, MAT.TENT_CANVAS, (z % 2 === 0) ? 0xe07a5f : 0xf4f1de, 0.025);
+          }
+        }
+      }
+      for (let z = -1; z <= 6; z++) grid.set(x0, y0 + 4, z0 + z, MAT.WOOD_DARK, 0x5c3712, 0.02);
+    }
+
+    function buildCampfire(grid, cx, cy, cz) {
+      grid.set(cx, cy, cz, MAT.EMBER, 0xff5400, 0.05);
+      grid.set(cx, cy + 1, cz, MAT.EMBER, 0xffbd00, 0.05);
+      grid.set(cx - 1, cy, cz, MAT.DARK_STONE);
+      grid.set(cx + 1, cy, cz, MAT.DARK_STONE);
+      grid.set(cx, cy, cz - 1, MAT.DARK_STONE);
+      grid.set(cx, cy, cz + 1, MAT.DARK_STONE);
+      grid.fillBox(cx - 2, cy, cz + 2, cx, cy, cz + 2, MAT.WOOD_LOG);
+      grid.fillBox(cx + 2, cy, cz - 1, cx + 2, cy, cz + 1, MAT.WOOD_LOG);
+    }
+
+    function buildCabin(grid, x0, y0, z0, upgraded = false) {
+      const w = upgraded ? 10 : 8, d = upgraded ? 9 : 7, wallH = upgraded ? 6 : 4;
+      grid.fillBox(x0, y0, z0, x0 + w - 1, y0, z0 + d - 1, MAT.COBBLE, 0x7d8597, 0.04);
+      for (let y = 1; y <= wallH; y++) {
+        for (let z = 0; z < d; z++) {
+          for (let x = 0; x < w; x++) {
+            if (x !== 0 && x !== w - 1 && z !== 0 && z !== d - 1) continue;
+            const isCorner = (x === 0 || x === w - 1) && (z === 0 || z === d - 1);
+            if (isCorner || (upgraded && y === 4)) grid.set(x0 + x, y0 + y, z0 + z, MAT.WOOD_DARK);
+            else if (upgraded && y <= 3) grid.set(x0 + x, y0 + y, z0 + z, MAT.STONE, 0x9aa5b1, 0.04);
+            else grid.set(x0 + x, y0 + y, z0 + z, MAT.WALL_CREAM);
+          }
+        }
+      }
+      const doorX = x0 + Math.floor(w / 2);
+      grid.fillBox(doorX - 1, y0 + 1, z0 + d - 1, doorX, y0 + 2, z0 + d - 1, MAT.WOOD_DARK, 0x3a2010, 0.02);
+      grid.fillBox(doorX - 2, y0, z0 + d, doorX + 1, y0, z0 + d + 1, MAT.PLANK);
+      if (upgraded) {
+        grid.fillBox(doorX - 2, y0 + 3, z0 + d, doorX + 1, y0 + 3, z0 + d, MAT.ROOF_RED);
+        grid.set(doorX - 2, y0 + 2, z0 + d, MAT.LANTERN);
+        grid.set(doorX + 1, y0 + 2, z0 + d, MAT.LANTERN);
+      }
+      grid.set(x0 + 1, y0 + 2, z0 + d - 1, MAT.GLASS_LIT);
+      grid.set(x0 + w - 2, y0 + 2, z0 + d - 1, MAT.GLASS_LIT);
+      grid.set(x0, y0 + 2, z0 + Math.floor(d / 2), MAT.GLASS_LIT);
+      grid.set(x0 + w - 1, y0 + 2, z0 + Math.floor(d / 2), MAT.GLASS_LIT);
+      if (upgraded) {
+        grid.fillBox(x0 + 2, y0 + 5, z0 + d - 1, x0 + 3, y0 + 5, z0 + d - 1, MAT.GLASS_LIT);
+        grid.fillBox(x0 + w - 4, y0 + 5, z0 + d - 1, x0 + w - 3, y0 + 5, z0 + d - 1, MAT.GLASS_LIT);
+        grid.set(x0 + 2, y0 + 4, z0 + d, MAT.FLOWER, 0xff595e, 0.04);
+        grid.set(x0 + w - 3, y0 + 4, z0 + d, MAT.FLOWER, 0xffca3a, 0.04);
+      }
+      const roofMat = upgraded ? MAT.ROOF_RED : MAT.ROOF_THATCH;
+      const roofSteps = Math.ceil(d / 2) + 1;
+      for (let step = 0; step < roofSteps; step++) {
+        const ry = y0 + wallH + 1 + step, zA = z0 - 1 + step, zB = z0 + d - step;
+        if (zA > zB) break;
+        for (let x = x0 - 1; x <= x0 + w; x++) {
+          grid.set(x, ry, zA, roofMat);
+          grid.set(x, ry, zB, roofMat);
+        }
+        if (zA + 1 <= zB - 1) {
+          for (let gz = zA + 1; gz <= zB - 1; gz++) {
+            grid.set(x0, ry, gz, MAT.WALL_CREAM);
+            grid.set(x0 + w - 1, ry, gz, MAT.WALL_CREAM);
+          }
+        }
+      }
+      grid.fillBox(x0 + 1, y0 + 1, z0 + 1, x0 + 2, y0 + wallH + roofSteps + 1, z0 + 2, MAT.DARK_STONE, 0x5c6470, 0.04);
+    }
+
+    function buildWindmill(grid, cx, cy, cz) {
+      for (let y = 0; y < 13; y++) {
+        const r = y < 4 ? 3 : y < 9 ? 2.4 : 2.0;
+        const ir = Math.ceil(r);
+        for (let dz = -ir; dz <= ir; dz++) {
+          for (let dx = -ir; dx <= ir; dx++) {
+            const d = Math.hypot(dx, dz);
+            if (d <= r + 0.15) {
+              if (d < r - 1.05 && y > 0 && y < 11) continue;
+              let m = y < 4 ? MAT.STONE : (y % 4 === 0 ? MAT.WOOD_DARK : MAT.WALL_CREAM);
+              if (y < 4 && (Math.abs(dx) === 3 || Math.abs(dz) === 3)) m = MAT.DARK_STONE;
+              grid.set(cx + dx, cy + y, cz + dz, m);
+            }
+          }
+        }
+      }
+      grid.set(cx, cy + 1, cz + 3, MAT.WOOD_DARK);
+      grid.set(cx, cy + 2, cz + 3, MAT.WOOD_DARK);
+      grid.set(cx, cy + 6, cz + 2, MAT.GLASS_LIT);
+      grid.set(cx, cy + 10, cz + 2, MAT.GLASS_LIT);
+      for (let step = 0; step < 4; step++) {
+        const r = 3 - step * 0.8, ir = Math.ceil(r);
+        for (let dz = -ir; dz <= ir; dz++)
+          for (let dx = -ir; dx <= ir; dx++)
+            if (Math.hypot(dx, dz) <= r + 0.1) grid.set(cx + dx, cy + 12 + step, cz + dz, MAT.ROOF_RED);
+      }
+      grid.set(cx, cy + 16, cz, MAT.WOOD_DARK);
+      grid.fillBox(cx, cy + 10, cz + 2, cx, cy + 10, cz + 4, MAT.WOOD_DARK);
+    }
+
+    function buildWindmillSailGrid() {
+      const g = new VoxelGrid(15, 15, 3);
+      const c = 7;
+      g.fillBox(c, c, 0, c, c, 2, MAT.WOOD_DARK);
+      for (let i = 1; i <= 6; i++) {
+        g.set(c, c + i, 1, MAT.PLANK);
+        g.set(c, c - i, 1, MAT.PLANK);
+        g.set(c + i, c, 1, MAT.PLANK);
+        g.set(c - i, c, 1, MAT.PLANK);
+        if (i >= 2) {
+          g.set(c + 1, c + i, 1, MAT.SAIL_CLOTH); g.set(c + 2, c + i, 1, MAT.SAIL_CLOTH);
+          g.set(c - 1, c - i, 1, MAT.SAIL_CLOTH); g.set(c - 2, c - i, 1, MAT.SAIL_CLOTH);
+          g.set(c + i, c - 1, 1, MAT.SAIL_CLOTH); g.set(c + i, c - 2, 1, MAT.SAIL_CLOTH);
+          g.set(c - i, c + 1, 1, MAT.SAIL_CLOTH); g.set(c - i, c + 2, 1, MAT.SAIL_CLOTH);
+        }
+      }
+      return g;
+    }
+
+    function buildBoatGrid() {
+      const g = new VoxelGrid(5, 3, 7);
+      for (let z = 1; z <= 5; z++) {
+        g.fillBox(1, 0, z, 3, 0, z, MAT.WOOD_DARK);
+        g.set(1, 1, z, MAT.PLANK);
+        g.set(3, 1, z, MAT.PLANK);
+      }
+      g.set(2, 1, 0, MAT.PLANK);
+      g.set(2, 1, 6, MAT.PLANK);
+      g.set(2, 1, 3, MAT.WOOD_LOG);
+      return g;
+    }
+
+    function buildCloudGrid(w, d) {
+      const g = new VoxelGrid(w, 3, d);
+      for (let z = 0; z < d; z++) {
+        for (let x = 0; x < w; x++) {
+          const dx = (x - (w - 1) * 0.5) / (w * 0.5);
+          const dz = (z - (d - 1) * 0.5) / (d * 0.5);
+          const r2 = dx * dx + dz * dz;
+          if (r2 < 0.95) {
+            g.set(x, 0, z, MAT.SAIL_CLOTH, 0xf3f6fa, 0.01);
+            if (r2 < 0.58) g.set(x, 1, z, MAT.SAIL_CLOTH, 0xffffff, 0.01);
+            if (r2 < 0.25) g.set(x, 2, z, MAT.SAIL_CLOTH, 0xffffff, 0.01);
+          }
+        }
+      }
+      return g;
+    }
+
+    function buildSettler(grid, x, y, z, tunicHex, hatHex = 0xe9c46a) {
+      grid.set(x, y, z, MAT.SETTLER, 0x3d405b, 0.02);
+      grid.set(x, y + 1, z, MAT.SETTLER, tunicHex, 0.03);
+      grid.set(x, y + 2, z, MAT.SETTLER, 0xffcdb2, 0.02);
+      if (hatHex !== null) grid.set(x, y + 3, z, MAT.SETTLER, hatHex, 0.03);
+    }
+
+    function buildStreetLantern(grid, x, y, z) {
+      grid.set(x, y, z, MAT.DARK_STONE);
+      grid.set(x, y + 1, z, MAT.WOOD_DARK);
+      grid.set(x, y + 2, z, MAT.WOOD_DARK);
+      grid.set(x, y + 3, z, MAT.LANTERN);
+    }
+
+    function buildValleyScene(stage = 3) {
+      const grid = new VoxelGrid(GRID_X, GRID_Y, GRID_Z);
+      const riverPts = [[22, 8], [22, 12], [23, 17], [25, 22], [28, 27], [31, 32], [35, 38], [38, 44], [41, 50]];
+      function riverSample(x, z) {
+        let minD = 999, bestT = 0;
+        const segs = riverPts.length - 1;
+        for (let s = 0; s < segs; s++) {
+          const [ax, az] = riverPts[s], [bx, bz] = riverPts[s + 1];
+          const abx = bx - ax, abz = bz - az;
+          const u = Math.max(0, Math.min(1, ((x - ax) * abx + (z - az) * abz) / (abx * abx + abz * abz)));
+          const d = Math.hypot(x - (ax + abx * u), z - (az + abz * u));
+          if (d < minD) { minD = d; bestT = (s + u) / segs; }
+        }
+        return { dist: minD, t: bestT };
+      }
+
+      const heightMap = new Int16Array(GRID_X * GRID_Z);
+      const waterMap = new Int16Array(GRID_X * GRID_Z);
+      const cx = 27.5, cz = 27.5;
+
+      for (let z = 0; z < GRID_Z; z++) {
+        for (let x = 0; x < GRID_X; x++) {
+          const dx = x - cx, dz = z - cz;
+          const dist = Math.hypot(dx, dz), ang = Math.atan2(dz, dx);
+          const edgeR = 23.6 + 1.6 * Math.sin(ang * 3 + 0.4) + 0.9 * Math.cos(ang * 5 - 1.1);
+          const idx2 = x + GRID_X * z;
+          if (dist > edgeR) { heightMap[idx2] = -1; continue; }
+
+          let h = 10 + 1.0 * Math.sin(x * 0.18) * Math.cos(z * 0.16);
+          const dHigh = Math.hypot((x - 14) * 0.95, (z - 15) * 0.9);
+          if (dHigh < 13) {
+            const t = Math.max(0, 1 - dHigh / 13);
+            h += t * t * (3 - 2 * t) * 4.6;
+          }
+          const dQuarryHill = Math.hypot((x - 8) * 1.1, (z - 31) * 0.9);
+          if (dQuarryHill < 8) h += (1 - dQuarryHill / 8) * 5.2;
+
+          if (Math.hypot(x - 14, z - 15) < 5.5) h = 14;
+          if (x >= 10 && x <= 16 && z >= 28 && z <= 35) h = 11;
+          if (x >= 30 && x <= 46 && z >= 13 && z <= 27) h = 10;
+          if (x >= 37 && x <= 46 && z >= 28 && z <= 36) h = 9;
+
+          const riv = riverSample(x, z);
+          const pondDist = Math.hypot(x - 35, z - 39);
+          const headPondDist = Math.hypot(x - 22, z - 10);
+          const rivWidth = riv.t > 0.55 ? 2.5 : 1.9;
+          const inRiver = riv.dist < rivWidth || pondDist < 4.5 || headPondDist < 3.0;
+          const wy = riv.t < 0.24 ? 12 : 8;
+
+          if (inRiver) {
+            h = pondDist < 3.0 ? wy - 3 : wy - 2;
+            waterMap[idx2] = wy;
+          } else if (riv.dist < rivWidth + 1.4 || pondDist < 5.7) {
+            h = Math.min(h, wy);
+          }
+
+          const hi = Math.round(h);
+          heightMap[idx2] = hi;
+          const baseY = Math.max(1, Math.round(2 + (dist / edgeR) * 2.5));
+          for (let y = baseY; y <= hi; y++) {
+            let m = MAT.STONE;
+            if (y <= baseY + 1) m = MAT.DARK_STONE;
+            else if (y === hi) {
+              if (inRiver) m = (x + z) % 3 === 0 ? MAT.STONE : MAT.SAND;
+              else if (riv.dist < rivWidth + 1.1 || pondDist < 5.4) m = MAT.SAND;
+              else if (x >= 10 && x <= 15 && z >= 28 && z <= 34) m = MAT.STONE;
+              else m = MAT.GRASS;
+            } else if (y >= hi - 2 && !inRiver) m = MAT.DIRT;
+            grid.set(x, y, z, m);
+          }
+          if (waterMap[idx2] > 0) {
+            for (let y = hi + 1; y <= wy; y++) {
+              const isWf = (riv.t >= 0.21 && riv.t <= 0.28) || dist > edgeR - 1.8;
+              grid.set(x, y, z, isWf && hash3(x, y, z) > 0.55 ? MAT.FOAM : MAT.WATER);
+            }
+          }
+        }
+      }
+
+      for (let y = 2; y <= 8; y++) {
+        grid.set(39, y, 47, y === 2 ? MAT.FOAM : MAT.WATER);
+        grid.set(40, y, 47, (y % 2 === 0) ? MAT.FOAM : MAT.WATER);
+      }
+      grid.set(39, 2, 48, MAT.FOAM); grid.set(40, 2, 48, MAT.FOAM);
+      grid.set(24, 9, 19, MAT.FOAM); grid.set(25, 9, 20, MAT.FOAM); grid.set(24, 10, 19, MAT.FOAM);
+
+      if (stage >= 2) {
+        for (let z = 28; z <= 35; z++) {
+          for (let y = 12; y <= 15; y++) {
+            grid.set(9, y, z, MAT.DARK_STONE);
+            grid.set(8, y, z, MAT.STONE);
+          }
+        }
+        grid.set(9, 13, 30, MAT.ORE_GOLD);
+        grid.set(9, 12, 31, MAT.ORE_GOLD);
+        grid.set(10, 12, 33, MAT.ORE_CRYSTAL);
+        grid.set(10, 13, 33, MAT.ORE_CRYSTAL);
+        grid.fillBox(14, 12, 32, 14, 15, 32, MAT.WOOD_DARK);
+        grid.fillBox(11, 15, 32, 14, 15, 32, MAT.PLANK);
+        grid.set(11, 14, 32, MAT.WOOD_LOG);
+        grid.fillBox(12, 12, 30, 13, 12, 31, MAT.STONE);
+      }
+
+      const flowerSpots = [
+        [30, 18], [32, 20], [27, 16], [19, 20], [16, 22], [21, 31],
+        [35, 13], [44, 15], [45, 25], [29, 34], [25, 39], [17, 13],
+      ];
+      for (let i = 0; i < flowerSpots.length; i++) {
+        const [fx, fz] = flowerSpots[i];
+        const fh = heightMap[fx + GRID_X * fz];
+        if (fh > 0 && waterMap[fx + GRID_X * fz] === 0) {
+          grid.set(fx, fh + 1, fz, MAT.FLOWER, i % 3 === 0 ? 0xffd166 : i % 3 === 1 ? 0xff6b8b : 0x8ecae6, 0.04);
+        }
+      }
+
+      for (const [lx, lz] of [[33, 36], [38, 37], [32, 41]]) {
+        if (grid.get(lx, 8, lz) === MAT.WATER) {
+          grid.set(lx, 9, lz, MAT.LILY_PAD);
+          if (lx === 38) grid.set(lx, 10, lz, MAT.LEAF_SAKURA, 0xff8fab, 0.02);
+        }
+      }
+      for (const [rx, rz] of [[26, 23], [29, 34], [32, 36], [39, 38]]) {
+        const rh = heightMap[rx + GRID_X * rz];
+        if (rh > 0) {
+          grid.set(rx, rh + 1, rz, MAT.LEAF_PINE, 0x52b788, 0.03);
+          grid.set(rx, rh + 2, rz, MAT.LEAF_PINE, 0x74c69d, 0.03);
+        }
+      }
+
+      for (const [px, pz, ph] of [[11, 10, 9], [16, 9, 10], [8, 17, 8], [10, 23, 9], [18, 22, 8]]) {
+        const y = heightMap[px + GRID_X * pz];
+        if (y > 0) {
+          if (stage === 1) plantSapling(grid, px, y + 1, pz);
+          else plantPineTree(grid, px, y + 1, pz, stage === 2 ? ph - 2 : ph);
+        }
+      }
+
+      const sy = heightMap[26 + GRID_X * 11];
+      if (sy > 0) {
+        if (stage === 1) plantSapling(grid, 26, sy + 1, 11);
+        else plantSakuraTree(grid, 26, sy + 1, 11);
+      }
+
+      for (const [ox, oz, sc, apples] of [[46, 15, 1.1, true], [47, 26, 1.0, false], [22, 37, 1.1, true], [16, 38, 0.95, false], [29, 12, 1.0, true]]) {
+        const oy = heightMap[ox + GRID_X * oz];
+        if (oy > 0) {
+          if (stage === 1) plantSapling(grid, ox, oy + 1, oz);
+          else plantOakTree(grid, ox, oy + 1, oz, stage === 2 ? sc * 0.8 : sc, stage === 3 && apples);
+        }
+      }
+
+      const placeLanternAtGround = (lx, lz) => {
+        const ly = heightMap[lx + GRID_X * lz];
+        if (ly > 0) buildStreetLantern(grid, lx, ly + 1, lz);
+      };
+
+      if (stage === 1) {
+        buildTent(grid, 35, 11, 17);
+        buildCampfire(grid, 32, 11, 25);
+        grid.fillBox(38, 11, 24, 40, 11, 25, MAT.WOOD_LOG);
+        grid.set(39, 12, 24, MAT.WOOD_LOG);
+        grid.set(37, 11, 22, MAT.WOOD_DARK);
+        grid.set(26, 9, 27, MAT.STONE); grid.set(28, 9, 27, MAT.STONE); grid.set(30, 9, 27, MAT.STONE);
+        buildSettler(grid, 33, 11, 26, 0xe76f51, 0x264653);
+      }
+
+      if (stage >= 2) {
+        for (let x = 23; x <= 31; x++) {
+          const arch = (x >= 25 && x <= 29) ? 10 : 9;
+          for (let z = 26; z <= 28; z++) grid.set(x, arch, z, MAT.PLANK);
+          grid.set(x, arch + 1, 26, MAT.WOOD_DARK);
+          grid.set(x, arch + 1, 28, MAT.WOOD_DARK);
+        }
+        placeLanternAtGround(22, 25); placeLanternAtGround(32, 25);
+        if (stage === 3) { placeLanternAtGround(22, 29); placeLanternAtGround(32, 29); }
+
+        grid.fillBox(30, 9, 38, 33, 9, 40, MAT.PLANK);
+        grid.set(33, 8, 38, MAT.WOOD_DARK); grid.set(33, 8, 40, MAT.WOOD_DARK);
+        grid.set(33, 10, 38, MAT.LANTERN);
+
+        for (let x = 38; x <= 45; x++) { grid.set(x, 10, 29, MAT.WOOD_DARK); grid.set(x, 10, 35, MAT.WOOD_DARK); }
+        for (let z = 29; z <= 35; z++) { grid.set(38, 10, z, MAT.WOOD_DARK); grid.set(45, 10, z, MAT.WOOD_DARK); }
+        grid.set(41, 10, 29, MAT.AIR);
+        for (let z = 30; z <= 34; z++) {
+          for (let x = 39; x <= 44; x++) {
+            grid.set(x, 9, z, MAT.DIRT, 0x5c3d2e, 0.03);
+            if (x % 2 === 1) {
+              grid.set(x, 10, z, MAT.WHEAT);
+              if (stage === 3) grid.set(x, 11, z, MAT.WHEAT, 0xf4d35e, 0.04);
+            } else if (z % 2 === 0) grid.set(x, 10, z, MAT.PUMPKIN);
+          }
+        }
+        buildCabin(grid, 33, 10, 14, stage === 3);
+        if (stage === 2) {
+          buildCampfire(grid, 32, 11, 24);
+          buildSettler(grid, 33, 11, 25, 0x457b9d);
+          buildSettler(grid, 32, 10, 39, 0x2a9d8f);
+        }
+      }
+
+      if (stage === 3) {
+        buildWindmill(grid, 14, 14, 15);
+        const roadPts = [
+          [32, 27], [33, 27], [34, 27], [35, 27], [36, 27], [37, 27],
+          [37, 26], [37, 25], [37, 24], [38, 24], [38, 28], [39, 28], [40, 28], [41, 28],
+          [22, 27], [21, 27], [20, 26], [19, 25], [18, 24], [17, 23], [16, 22], [15, 21], [14, 20],
+        ];
+        for (const [rx, rz] of roadPts) {
+          const ry = heightMap[rx + GRID_X * rz];
+          if (ry > 0 && waterMap[rx + GRID_X * rz] === 0) {
+            grid.set(rx, ry, rz, MAT.COBBLE);
+            grid.set(rx + 1, ry, rz, MAT.COBBLE);
+          }
+        }
+        grid.fillBox(44, 10, 19, 47, 10, 23, MAT.COBBLE);
+        grid.fillBox(44, 11, 19, 44, 12, 19, MAT.WOOD_DARK);
+        grid.fillBox(47, 11, 19, 47, 12, 19, MAT.WOOD_DARK);
+        grid.fillBox(44, 11, 23, 44, 12, 23, MAT.WOOD_DARK);
+        grid.fillBox(47, 11, 23, 47, 12, 23, MAT.WOOD_DARK);
+        grid.fillBox(43, 13, 18, 48, 13, 24, MAT.ROOF_THATCH);
+        grid.fillBox(44, 14, 19, 47, 14, 23, MAT.ROOF_THATCH);
+        grid.fillBox(45, 11, 20, 46, 12, 21, MAT.PLANK);
+        grid.set(44, 11, 22, MAT.WOOD_LOG);
+
+        grid.fillBox(29, 11, 21, 31, 11, 21, MAT.PLANK);
+        grid.set(29, 12, 21, MAT.APPLE); grid.set(31, 12, 21, MAT.PUMPKIN);
+        grid.fillBox(29, 12, 22, 29, 12, 22, MAT.WOOD_DARK);
+        grid.fillBox(31, 12, 22, 31, 12, 22, MAT.WOOD_DARK);
+        grid.set(29, 13, 21, MAT.WOOD_DARK); grid.set(31, 13, 21, MAT.WOOD_DARK);
+        for (let x = 29; x <= 31; x++)
+          for (let z = 20; z <= 22; z++)
+            grid.set(x, 14, z, MAT.TENT_CANVAS, x % 2 === 0 ? 0xe63946 : 0xf8f9fa, 0.02);
+
+        placeLanternAtGround(35, 25);
+        placeLanternAtGround(41, 27);
+        placeLanternAtGround(17, 19);
+
+        buildSettler(grid, 30, 11, 23, 0xe63946, 0xf4a261);
+        buildSettler(grid, 41, 10, 31, 0x2a9d8f, 0xe9c46a);
+        buildSettler(grid, 32, 10, 39, 0x457b9d, 0x8d99ae);
+        buildSettler(grid, 27, 11, 27, 0xf4a261, 0x264653);
+      }
+      return grid;
+    }
+
+    function computePointLights(grid) {
+      grid.light.fill(0);
+      const { sx, sy, sz, light } = grid;
+      const qx = [], qy = [], qz = [], qr = [], qg = [], qb = [];
+      for (let y = 0; y < sy; y++) {
+        for (let z = 0; z < sz; z++) {
+          for (let x = 0; x < sx; x++) {
+            const m = grid.get(x, y, z);
+            if (isEmissiveMat(m)) {
+              let r = 255, g = 180, b = 85;
+              if (m === MAT.EMBER) { r = 255; g = 130; b = 45; }
+              else if (m === MAT.ORE_CRYSTAL) { r = 60; g = 220; b = 255; }
+              else if (m === MAT.GLASS_LIT) { r = 255; g = 190; b = 95; }
+              const idx = grid.idx(x, y, z) * 3;
+              light[idx] = r; light[idx + 1] = g; light[idx + 2] = b;
+              qx.push(x); qy.push(y); qz.push(z); qr.push(r); qg.push(g); qb.push(b);
+            }
+          }
+        }
+      }
+      const dirs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+      let head = 0;
+      while (head < qx.length) {
+        const x = qx[head], y = qy[head], z = qz[head];
+        const r = qr[head], g = qg[head], b = qb[head];
+        head++;
+        const nr = Math.floor(r * 0.78 - 10), ng = Math.floor(g * 0.78 - 10), nb = Math.floor(b * 0.78 - 10);
+        if (nr <= 8 && ng <= 8 && nb <= 8) continue;
+        for (const [dx, dy, dz] of dirs) {
+          const nx = x + dx, ny = y + dy, nz = z + dz;
+          if (!grid.inBounds(nx, ny, nz)) continue;
+          const nm = grid.get(nx, ny, nz);
+          if (nm !== MAT.AIR && nm !== MAT.WATER && nm !== MAT.LEAF_OAK && nm !== MAT.LEAF_SAKURA) continue;
+          const atten = (nm === MAT.LEAF_OAK || nm === MAT.LEAF_SAKURA) ? 0.65 : 1.0;
+          const cr = Math.max(0, Math.floor(nr * atten));
+          const cg = Math.max(0, Math.floor(ng * atten));
+          const cb = Math.max(0, Math.floor(nb * atten));
+          const li = grid.idx(nx, ny, nz) * 3;
+          if (cr > light[li] || cg > light[li + 1] || cb > light[li + 2]) {
+            light[li] = Math.max(light[li], cr);
+            light[li + 1] = Math.max(light[li + 1], cg);
+            light[li + 2] = Math.max(light[li + 2], cb);
+            qx.push(nx); qy.push(ny); qz.push(nz); qr.push(cr); qg.push(cg); qb.push(cb);
+          }
+        }
+      }
+    }
+
+    const SUN_JITTER = [[0,0,0], [0.06,0.03,-0.05], [-0.06,0.03,0.05], [0.04,-0.04,0.06], [-0.04,-0.04,-0.06]];
+    function computeSunVisibility(grid, fx, fy, fz, sunDir) {
+      let lit = 0;
+      for (let k = 0; k < 5; k++) {
+        const j = SUN_JITTER[k];
+        let dx = sunDir[0] + j[0], dy = sunDir[1] + j[1], dz = sunDir[2] + j[2];
+        const inv = 1 / Math.hypot(dx, dy, dz);
+        dx *= inv; dy *= inv; dz *= inv;
+        let px = fx + 0.5 + dx * 0.55, py = fy + 0.5 + dy * 0.55, pz = fz + 0.5 + dz * 0.55;
+        let blocked = false;
+        for (let step = 0; step < 48; step++) {
+          const ix = Math.floor(px), iy = Math.floor(py), iz = Math.floor(pz);
+          if (ix < 0 || ix >= grid.sx || iy >= grid.sy || iz < 0 || iz >= grid.sz) break;
+          if (iy >= 0) {
+            const m = grid.get(ix, iy, iz);
+            if (m !== MAT.AIR && m !== MAT.WATER && !isEmissiveMat(m)) { blocked = true; break; }
+          }
+          px += dx * 0.85; py += dy * 0.85; pz += dz * 0.85;
+        }
+        if (!blocked) lit += 1;
+      }
+      return lit / 5;
+    }
+
+    const FACES = [
+      { n: [1,0,0], t1: [0,1,0], t2: [0,0,1], corners: [[1,0,1],[1,0,0],[1,1,0],[1,1,1]], uv: [[0,0],[1,0],[1,1],[0,1]] },
+      { n: [-1,0,0], t1: [0,1,0], t2: [0,0,1], corners: [[0,0,0],[0,0,1],[0,1,1],[0,1,0]], uv: [[0,0],[1,0],[1,1],[0,1]] },
+      { n: [0,1,0], t1: [1,0,0], t2: [0,0,1], corners: [[0,1,1],[1,1,1],[1,1,0],[0,1,0]], uv: [[0,0],[1,0],[1,1],[0,1]] },
+      { n: [0,-1,0], t1: [1,0,0], t2: [0,0,1], corners: [[0,0,0],[1,0,0],[1,0,1],[0,0,1]], uv: [[0,0],[1,0],[1,1],[0,1]] },
+      { n: [0,0,1], t1: [1,0,0], t2: [0,1,0], corners: [[0,0,1],[1,0,1],[1,1,1],[0,1,1]], uv: [[0,0],[1,0],[1,1],[0,1]] },
+      { n: [0,0,-1], t1: [1,0,0], t2: [0,1,0], corners: [[1,0,0],[0,0,0],[0,1,0],[1,1,0]], uv: [[0,0],[1,0],[1,1],[0,1]] },
+    ];
+    const AO_CURVE = [0.46, 0.67, 0.84, 1.0];
+
+    function vertexAO(grid, x, y, z, face, corner) {
+      const [nx, ny, nz] = face.n, fx = x + nx, fy = y + ny, fz = z + nz;
+      const [t1x, t1y, t1z] = face.t1, [t2x, t2y, t2z] = face.t2;
+      const s1 = (corner[0] * t1x + corner[1] * t1y + corner[2] * t1z) === 1 ? 1 : -1;
+      const s2 = (corner[0] * t2x + corner[1] * t2y + corner[2] * t2z) === 1 ? 1 : -1;
+      const side1 = isOpaqueOccluder(grid.get(fx + s1 * t1x, fy + s1 * t1y, fz + s1 * t1z)) ? 1 : 0;
+      const side2 = isOpaqueOccluder(grid.get(fx + s2 * t2x, fy + s2 * t2y, fz + s2 * t2z)) ? 1 : 0;
+      if (side1 && side2) return AO_CURVE[0];
+      const diag = isOpaqueOccluder(grid.get(fx + s1 * t1x + s2 * t2x, fy + s1 * t1y + s2 * t2y, fz + s1 * t1z + s2 * t2z)) ? 1 : 0;
+      return AO_CURVE[3 - (side1 + side2 + diag)];
+    }
+
+    function buildVoxelMesh(grid, sunDir, options = {}) {
+      const { skipShadows = false, skipPointLights = false, centerOrigin = false } = options;
+      if (!skipPointLights) computePointLights(grid);
+      const ox = centerOrigin ? -grid.sx * 0.5 : 0;
+      const oy = centerOrigin ? -grid.sy * 0.5 : 0;
+      const oz = centerOrigin ? -grid.sz * 0.5 : 0;
+      const makeBuf = () => ({ pos: [], norm: [], col: [], uv: [], ao: [], sun: [], ptLight: [], emissive: [], idx: [] });
+      const opaque = makeBuf(), water = makeBuf();
+
+      for (let y = 0; y < grid.sy; y++) {
+        for (let z = 0; z < grid.sz; z++) {
+          for (let x = 0; x < grid.sx; x++) {
+            const m = grid.get(x, y, z);
+            if (m === MAT.AIR) continue;
+            const isWater = m === MAT.WATER;
+            const buf = isWater ? water : opaque;
+            const hex = grid.getCol(x, y, z);
+            const r = ((hex >> 16) & 255) / 255, g = ((hex >> 8) & 255) / 255, b = (hex & 255) / 255;
+            const em = isEmissiveMat(m) ? 1.0 : 0.0;
+            for (let fi = 0; fi < 6; fi++) {
+              const f = FACES[fi];
+              const nx = x + f.n[0], ny = y + f.n[1], nz = z + f.n[2];
+              const nb = grid.get(nx, ny, nz);
+              if (isWater) { if (nb === MAT.WATER || isOpaqueOccluder(nb)) continue; }
+              else { if (isOpaqueOccluder(nb)) continue; }
+
+              const sunVis = skipShadows ? 1.0 : computeSunVisibility(grid, x, y, z, sunDir);
+              let lr = 0, lg = 0, lb = 0;
+              if (!skipPointLights && grid.inBounds(nx, ny, nz)) {
+                const li = grid.idx(nx, ny, nz) * 3;
+                lr = grid.light[li] / 255; lg = grid.light[li + 1] / 255; lb = grid.light[li + 2] / 255;
+              }
+              const baseV = buf.pos.length / 3;
+              const aos = [0, 0, 0, 0];
+              for (let ci = 0; ci < 4; ci++) {
+                const c = f.corners[ci];
+                const ao = isWater ? 1.0 : vertexAO(grid, x, y, z, f, c);
+                aos[ci] = ao;
+                buf.pos.push(x + c[0] + ox, y + c[1] + oy, z + c[2] + oz);
+                buf.norm.push(f.n[0], f.n[1], f.n[2]);
+                buf.col.push(r, g, b);
+                buf.uv.push(f.uv[ci][0], f.uv[ci][1]);
+                buf.ao.push(ao);
+                buf.sun.push(sunVis);
+                buf.ptLight.push(lr, lg, lb);
+                buf.emissive.push(em);
+              }
+              if (aos[0] + aos[2] > aos[1] + aos[3]) {
+                buf.idx.push(baseV, baseV + 1, baseV + 2, baseV, baseV + 2, baseV + 3);
+              } else {
+                buf.idx.push(baseV + 1, baseV + 2, baseV + 3, baseV + 1, baseV + 3, baseV);
+              }
+            }
+          }
+        }
+      }
+      return { opaque, water };
+    }
+
+    function mergeGrid(target, src, ox, oy, oz) {
+      for (let y = 0; y < src.sy; y++)
+        for (let z = 0; z < src.sz; z++)
+          for (let x = 0; x < src.sx; x++) {
+            const m = src.get(x, y, z);
+            if (m !== MAT.AIR) target.set(ox + x, oy + y, oz + z, m, src.getCol(x, y, z), 0);
+          }
+    }
+
+    function cloneGridWithDynamics(baseGrid, stage) {
+      const g = new VoxelGrid(baseGrid.sx, baseGrid.sy, baseGrid.sz);
+      g.mat.set(baseGrid.mat);
+      g.col.set(baseGrid.col);
+      if (stage >= 2) mergeGrid(g, buildBoatGrid(), 34, 8, 36);
+      if (stage === 3) mergeGrid(g, buildWindmillSailGrid(), 7, 17, 18);
+      return g;
+    }
+
+    function srgbToLinear(c) {
+      return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    }
+
+    function exportGridToGLB(grid, scale = 0.5) {
+      const { opaque, water } = buildVoxelMesh(grid, [0.55, 0.72, 0.42], { skipShadows: true });
+      const cx = grid.sx * 0.5, cz = grid.sz * 0.5;
+      const chunks = [], bufferViews = [], accessors = [], primitives = [], materials = [];
+      let byteOffset = 0;
+
+      function appendTyped(arr) {
+        const bytes = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
+        chunks.push(bytes);
+        const viewIndex = bufferViews.length;
+        bufferViews.push({ buffer: 0, byteOffset, byteLength: bytes.byteLength });
+        byteOffset += bytes.byteLength;
+        const pad = (4 - (byteOffset % 4)) % 4;
+        if (pad > 0) { chunks.push(new Uint8Array(pad)); byteOffset += pad; }
+        return viewIndex;
+      }
+
+      function addPrimitive(buf, matIndex) {
+        if (buf.pos.length === 0) return;
+        const vCount = buf.pos.length / 3;
+        const posArr = new Float32Array(buf.pos.length);
+        const normArr = new Float32Array(buf.norm);
+        const colArr = new Float32Array(buf.col.length);
+        const idxArr = new Uint32Array(buf.idx);
+        const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+        for (let i = 0; i < vCount; i++) {
+          const px = (buf.pos[i * 3] - cx) * scale, py = buf.pos[i * 3 + 1] * scale, pz = (buf.pos[i * 3 + 2] - cz) * scale;
+          posArr[i * 3] = px; posArr[i * 3 + 1] = py; posArr[i * 3 + 2] = pz;
+          if (px < min[0]) min[0] = px; if (py < min[1]) min[1] = py; if (pz < min[2]) min[2] = pz;
+          if (px > max[0]) max[0] = px; if (py > max[1]) max[1] = py; if (pz > max[2]) max[2] = pz;
+          const ao = 0.55 + 0.45 * buf.ao[i];
+          colArr[i * 3] = srgbToLinear(Math.min(1, buf.col[i * 3] * ao));
+          colArr[i * 3 + 1] = srgbToLinear(Math.min(1, buf.col[i * 3 + 1] * ao));
+          colArr[i * 3 + 2] = srgbToLinear(Math.min(1, buf.col[i * 3 + 2] * ao));
+        }
+        const posAcc = accessors.length;
+        accessors.push({ bufferView: appendTyped(posArr), componentType: 5126, count: vCount, type: 'VEC3', min, max });
+        const normAcc = accessors.length;
+        accessors.push({ bufferView: appendTyped(normArr), componentType: 5126, count: vCount, type: 'VEC3' });
+        const colAcc = accessors.length;
+        accessors.push({ bufferView: appendTyped(colArr), componentType: 5126, count: vCount, type: 'VEC3' });
+        const idxAcc = accessors.length;
+        accessors.push({ bufferView: appendTyped(idxArr), componentType: 5125, count: idxArr.length, type: 'SCALAR' });
+        primitives.push({ attributes: { POSITION: posAcc, NORMAL: normAcc, COLOR_0: colAcc }, indices: idxAcc, material: matIndex });
+      }
+
+      materials.push({ name: 'VoxelOpaque', pbrMetallicRoughness: { baseColorFactor: [1,1,1,1], metallicFactor: 0.04, roughnessFactor: 0.88 } });
+      addPrimitive(opaque, 0);
+      if (water.pos.length > 0) {
+        materials.push({ name: 'VoxelWater', alphaMode: 'BLEND', pbrMetallicRoughness: { baseColorFactor: [1,1,1,0.78], metallicFactor: 0.1, roughnessFactor: 0.2 } });
+        addPrimitive(water, 1);
+      }
+      const gltf = {
+        asset: { version: '2.0', generator: 'Whisperwood Voxel Engine' },
+        scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0, name: 'VoxelDiorama' }],
+        meshes: [{ name: 'VoxelMesh', primitives }], materials, bufferViews, accessors, buffers: [{ byteLength: byteOffset }],
+      };
+      const jsonBytesRaw = new TextEncoder().encode(JSON.stringify(gltf));
+      const jsonPad = (4 - (jsonBytesRaw.length % 4)) % 4;
+      const jsonLen = jsonBytesRaw.length + jsonPad;
+      const totalLen = 12 + 8 + jsonLen + 8 + byteOffset;
+      const out = new Uint8Array(totalLen), dv = new DataView(out.buffer);
+      dv.setUint32(0, 0x46546C67, true); dv.setUint32(4, 2, true); dv.setUint32(8, totalLen, true);
+      dv.setUint32(12, jsonLen, true); dv.setUint32(16, 0x4E4F534A, true);
+      out.set(jsonBytesRaw, 20);
+      for (let i = 0; i < jsonPad; i++) out[20 + jsonBytesRaw.length + i] = 0x20;
+      const binOff = 20 + jsonLen;
+      dv.setUint32(binOff, byteOffset, true); dv.setUint32(binOff + 4, 0x004E4942, true);
+      let p = binOff + 8;
+      for (const c of chunks) { out.set(c, p); p += c.byteLength; }
+      return out;
+    }
+
+    const PRESETS = {
+      morning: {
+        sunDir: [0.68, 0.52, 0.51], sunColor: [1.05, 0.90, 0.72], skyColor: [0.58, 0.78, 0.98],
+        groundColor: [0.28, 0.26, 0.30], skyZenith: [0.24, 0.52, 0.88], skyHorizon: [0.95, 0.78, 0.65],
+        fogColor: [0.88, 0.80, 0.74], nightBoost: 0.25,
+      },
+      noon: {
+        sunDir: [0.48, 0.82, 0.31], sunColor: [1.12, 1.07, 0.98], skyColor: [0.62, 0.84, 1.0],
+        groundColor: [0.26, 0.30, 0.26], skyZenith: [0.16, 0.50, 0.90], skyHorizon: [0.70, 0.88, 0.98],
+        fogColor: [0.72, 0.88, 0.97], nightBoost: 0.08,
+      },
+      sunset: {
+        sunDir: [-0.72, 0.32, 0.61], sunColor: [1.22, 0.66, 0.36], skyColor: [0.55, 0.44, 0.65],
+        groundColor: [0.25, 0.16, 0.22], skyZenith: [0.18, 0.20, 0.44], skyHorizon: [0.96, 0.52, 0.34],
+        fogColor: [0.85, 0.52, 0.42], nightBoost: 0.72,
+      },
+      night: {
+        sunDir: [-0.45, 0.68, -0.58], sunColor: [0.28, 0.38, 0.64], skyColor: [0.14, 0.20, 0.38],
+        groundColor: [0.06, 0.08, 0.14], skyZenith: [0.03, 0.05, 0.14], skyHorizon: [0.09, 0.14, 0.28],
+        fogColor: [0.07, 0.11, 0.22], nightBoost: 1.45,
+      },
+    };
+
+    function normVec3(v) { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0]/l, v[1]/l, v[2]/l]; }
+    function cross(a, b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+    function dot(a, b) { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; }
+    function mat4Identity() { const m = new Float32Array(16); m[0]=m[5]=m[10]=m[15]=1; return m; }
+    function mat4Perspective(fovRad, aspect, near, far) {
+      const m = new Float32Array(16), f = 1.0 / Math.tan(fovRad * 0.5);
+      m[0]=f/aspect; m[5]=f; m[10]=(far+near)/(near-far); m[11]=-1; m[14]=(2*far*near)/(near-far);
+      return m;
+    }
+    function mat4LookAt(eye, target, up) {
+      const z = normVec3([eye[0]-target[0], eye[1]-target[1], eye[2]-target[2]]);
+      const x = normVec3(cross(up, z)), y = cross(z, x), m = new Float32Array(16);
+      m[0]=x[0]; m[4]=x[1]; m[8]=x[2]; m[12]=-dot(x, eye);
+      m[1]=y[0]; m[5]=y[1]; m[9]=y[2]; m[13]=-dot(y, eye);
+      m[2]=z[0]; m[6]=z[1]; m[10]=z[2]; m[14]=-dot(z, eye); m[15]=1;
+      return { mat: m, right: x, up: y, forward: [-z[0], -z[1], -z[2]] };
+    }
+    function mat4Mul(a, b) {
+      const out = new Float32Array(16);
+      for (let c = 0; c < 4; c++)
+        for (let r = 0; r < 4; r++)
+          out[c*4+r] = a[r]*b[c*4] + a[4+r]*b[c*4+1] + a[8+r]*b[c*4+2] + a[12+r]*b[c*4+3];
+      return out;
+    }
+    function mat4Transform(tx, ty, tz, rx, ry, rz, sx = 1, sy = 1, sz = 1) {
+      const cx=Math.cos(rx), sxr=Math.sin(rx), cy=Math.cos(ry), syr=Math.sin(ry), cz=Math.cos(rz), szr=Math.sin(rz);
+      const T = mat4Identity(); T[12]=tx; T[13]=ty; T[14]=tz;
+      const Rz = mat4Identity(); Rz[0]=cz; Rz[1]=szr; Rz[4]=-szr; Rz[5]=cz;
+      const Ry = mat4Identity(); Ry[0]=cy; Ry[2]=-syr; Ry[8]=syr; Ry[10]=cy;
+      const Rx = mat4Identity(); Rx[5]=cx; Rx[6]=sxr; Rx[9]=-sxr; Rx[10]=cx;
+      const S = mat4Identity(); S[0]=sx; S[5]=sy; S[10]=sz;
+      return mat4Mul(T, mat4Mul(Rz, mat4Mul(Ry, mat4Mul(Rx, S))));
+    }
+
+    const canvas = document.getElementById('glcanvas');
+    const gl = canvas.getContext('webgl', { antialias: true, alpha: false, powerPreference: 'high-performance' });
+    if (!gl) document.getElementById('stats-line').textContent = 'Trình duyệt không hỗ trợ WebGL.';
+
+    function compileShader(type, src) {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(sh));
+      return sh;
+    }
+    function createProg(vs, fs) {
+      const p = gl.createProgram();
+      gl.attachShader(p, compileShader(gl.VERTEX_SHADER, vs));
+      gl.attachShader(p, compileShader(gl.FRAGMENT_SHADER, fs));
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) console.error(gl.getProgramInfoLog(p));
+      return p;
+    }
+
+    const skyProg = createProg(`
+      attribute vec2 aPos2d;
+      varying vec2 vNdc;
+      void main() { vNdc = aPos2d; gl_Position = vec4(aPos2d, 0.9999, 1.0); }
+    `, `
+      precision mediump float;
+      varying vec2 vNdc;
+      uniform vec3 uCamForward, uCamRight, uCamUp;
+      uniform float uAspect, uTanHalfFov;
+      uniform vec3 uSkyZenith, uSkyHorizon, uSunDir, uSunColor;
+      uniform float uNightBoost, uTime;
+      float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      void main() {
+        vec3 dir = normalize(uCamForward + vNdc.x * uAspect * uTanHalfFov * uCamRight + vNdc.y * uTanHalfFov * uCamUp);
+        float h = clamp(dir.y * 1.15 + 0.05, 0.0, 1.0);
+        vec3 col = mix(uSkyHorizon, uSkyZenith, pow(h, 0.58));
+        if (dir.y < -0.02) col = mix(uSkyHorizon, uSkyHorizon * 0.65, clamp(-dir.y * 2.2, 0.0, 1.0));
+        float sunAmt = max(dot(dir, normalize(uSunDir)), 0.0);
+        float halo = pow(sunAmt, 10.0) * 0.35 + pow(sunAmt, 96.0) * 0.55;
+        float disc = smoothstep(0.9978, 0.9990, sunAmt);
+        vec3 discCol = uNightBoost > 1.0 ? vec3(0.88, 0.93, 1.0) : clamp(uSunColor * 1.2, 0.0, 1.4);
+        col += discCol * (halo + disc * 1.15);
+        if (uNightBoost > 0.55 && dir.y > 0.04) {
+          vec2 starUv = floor(dir.xz / (dir.y + 0.35) * 90.0);
+          float s = hash2(starUv);
+          if (s > 0.991) {
+            float tw = 0.55 + 0.45 * sin(uTime * 2.5 + s * 100.0);
+            float mask = smoothstep(0.55, 1.25, uNightBoost) * smoothstep(0.04, 0.32, dir.y);
+            col += vec3(0.85, 0.92, 1.0) * tw * mask * 0.85;
+          }
+        }
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `);
+
+    const voxelProg = createProg(`
+      attribute vec3 aPos, aNorm, aCol, aPtLight;
+      attribute vec2 aUv;
+      attribute float aAo, aSun, aEmissive;
+      uniform mat4 uProjView, uModel;
+      uniform float uTime, uIsWater;
+      varying vec3 vNorm, vCol, vPtLight, vWorldPos;
+      varying vec2 vUv;
+      varying float vAo, vSun, vEmissive;
+      void main() {
+        vec4 wp = uModel * vec4(aPos, 1.0);
+        if (uIsWater > 0.5 && aNorm.y > 0.5) {
+          wp.y += 0.055 * sin(wp.x * 1.25 + uTime * 2.3) * cos(wp.z * 1.15 + uTime * 1.8) - 0.14;
+        }
+        vWorldPos = wp.xyz;
+        vNorm = mat3(uModel[0].xyz, uModel[1].xyz, uModel[2].xyz) * aNorm;
+        vCol = aCol; vUv = aUv; vAo = aAo; vSun = aSun; vPtLight = aPtLight; vEmissive = aEmissive;
+        gl_Position = uProjView * wp;
+      }
+    `, `
+      precision mediump float;
+      varying vec3 vNorm, vCol, vPtLight, vWorldPos;
+      varying vec2 vUv;
+      varying float vAo, vSun, vEmissive;
+      uniform vec3 uSunDir, uSunColor, uSkyColor, uGroundColor, uFogColor, uCamPos;
+      uniform float uNightBoost, uTime, uIsDynamic, uIsWater;
+      vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+      void main() {
+        vec3 N = normalize(vNorm), L = normalize(uSunDir), V = normalize(uCamPos - vWorldPos);
+        vec3 baseLinear = pow(vCol, vec3(2.2));
+        float skyHemi = 0.5 + 0.5 * N.y;
+        float aoFactor = 0.44 + 0.56 * vAo;
+        vec3 ambient = mix(uGroundColor, uSkyColor, skyHemi) * 0.58 * aoFactor;
+        float ndotl = max(dot(N, L), 0.0);
+        float shadow = mix(vSun, 1.0, uIsDynamic);
+        vec3 direct = uSunColor * ndotl * 1.05 * shadow * (0.45 + 0.55 * vAo);
+        vec3 ptGlow = vPtLight * (0.55 + 1.65 * uNightBoost);
+        vec2 edgeD = min(vUv, 1.0 - vUv);
+        float edgeMul = mix(0.91, 1.0, smoothstep(0.0, 0.075, min(edgeD.x, edgeD.y)));
+        vec3 color = baseLinear * edgeMul * (ambient + direct) + baseLinear * ptGlow * 0.9;
+        if (uIsWater > 0.5) {
+          float ripple = 0.5 + 0.5 * sin(vWorldPos.x * 2.4 + uTime * 2.9) * cos(vWorldPos.z * 2.1 - uTime * 2.2);
+          vec3 H = normalize(L + V);
+          float spec = pow(max(dot(N, H), 0.0), 52.0) * (0.55 + 0.45 * ripple);
+          float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+          color = mix(color, uSkyColor * 0.85, fresnel * 0.48) + uSunColor * spec * 0.85 + vec3(0.03, 0.08, 0.10) * ripple;
+        }
+        if (vEmissive > 0.5) {
+          float flicker = 1.0 + 0.08 * sin(uTime * 7.5 + vWorldPos.x * 3.0 + vWorldPos.z * 2.1);
+          color = max(color, baseLinear * (0.9 + 1.35 * uNightBoost) * flicker);
+        }
+        float fog = smoothstep(78.0, 155.0, length(uCamPos - vWorldPos));
+        color = mix(color, pow(uFogColor, vec3(2.2)), fog);
+        vec3 outCol = pow(aces(color), vec3(1.0 / 2.2));
+        float alpha = uIsWater > 0.5 ? mix(0.76, 0.88, pow(1.0 - max(dot(N, V), 0.0), 2.0)) : 1.0;
+        gl_FragColor = vec4(outCol, alpha);
+      }
+    `);
+
+    const skyQuadBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, skyQuadBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+
+    const VOX_LOCS = {
+      aPos: gl.getAttribLocation(voxelProg, 'aPos'), aNorm: gl.getAttribLocation(voxelProg, 'aNorm'),
+      aCol: gl.getAttribLocation(voxelProg, 'aCol'), aUv: gl.getAttribLocation(voxelProg, 'aUv'),
+      aAo: gl.getAttribLocation(voxelProg, 'aAo'), aSun: gl.getAttribLocation(voxelProg, 'aSun'),
+      aPtLight: gl.getAttribLocation(voxelProg, 'aPtLight'), aEmissive: gl.getAttribLocation(voxelProg, 'aEmissive'),
+    };
+    const VOX_LOC_LIST = Object.values(VOX_LOCS);
+    const skyLoc = gl.getAttribLocation(skyProg, 'aPos2d');
+
+    function createInterleavedChunks(buf) {
+      const totalQuads = (buf.idx.length / 6) | 0, chunks = [], MAX_QUADS = 14000, STRIDE = 17;
+      for (let q0 = 0; q0 < totalQuads; q0 += MAX_QUADS) {
+        const qCount = Math.min(MAX_QUADS, totalQuads - q0), vCount = qCount * 4;
+        const vData = new Float32Array(vCount * STRIDE), iData = new Uint16Array(qCount * 6), vStart = q0 * 4;
+        for (let vi = 0; vi < vCount; vi++) {
+          const sv = vStart + vi, o = vi * STRIDE;
+          vData[o]=buf.pos[sv*3]; vData[o+1]=buf.pos[sv*3+1]; vData[o+2]=buf.pos[sv*3+2];
+          vData[o+3]=buf.norm[sv*3]; vData[o+4]=buf.norm[sv*3+1]; vData[o+5]=buf.norm[sv*3+2];
+          vData[o+6]=buf.col[sv*3]; vData[o+7]=buf.col[sv*3+1]; vData[o+8]=buf.col[sv*3+2];
+          vData[o+9]=buf.uv[sv*2]; vData[o+10]=buf.uv[sv*2+1];
+          vData[o+11]=buf.ao[sv]; vData[o+12]=buf.sun[sv];
+          vData[o+13]=buf.ptLight[sv*3]; vData[o+14]=buf.ptLight[sv*3+1]; vData[o+15]=buf.ptLight[sv*3+2];
+          vData[o+16]=buf.emissive[sv];
+        }
+        const iStart = q0 * 6;
+        for (let ii = 0; ii < qCount * 6; ii++) iData[ii] = buf.idx[iStart + ii] - vStart;
+        const vbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, vData, gl.STATIC_DRAW);
+        const ibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, iData, gl.STATIC_DRAW);
+        chunks.push({ vbo, ibo, count: iData.length });
+      }
+      return chunks;
+    }
+    function disposeChunks(chunks) { if (chunks) for (const c of chunks) { gl.deleteBuffer(c.vbo); gl.deleteBuffer(c.ibo); } }
+    function drawChunks(chunks) {
+      const stride = 17 * 4;
+      for (const c of chunks) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, c.vbo);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, c.ibo);
+        gl.vertexAttribPointer(VOX_LOCS.aPos, 3, gl.FLOAT, false, stride, 0);
+        gl.vertexAttribPointer(VOX_LOCS.aNorm, 3, gl.FLOAT, false, stride, 12);
+        gl.vertexAttribPointer(VOX_LOCS.aCol, 3, gl.FLOAT, false, stride, 24);
+        gl.vertexAttribPointer(VOX_LOCS.aUv, 2, gl.FLOAT, false, stride, 36);
+        gl.vertexAttribPointer(VOX_LOCS.aAo, 1, gl.FLOAT, false, stride, 44);
+        gl.vertexAttribPointer(VOX_LOCS.aSun, 1, gl.FLOAT, false, stride, 48);
+        gl.vertexAttribPointer(VOX_LOCS.aPtLight, 3, gl.FLOAT, false, stride, 52);
+        gl.vertexAttribPointer(VOX_LOCS.aEmissive, 1, gl.FLOAT, false, stride, 64);
+        gl.drawElements(gl.TRIANGLES, c.count, gl.UNSIGNED_SHORT, 0);
+      }
+    }
+
+    const sailChunks = createInterleavedChunks(buildVoxelMesh(buildWindmillSailGrid(), [0.5,0.8,0.4], { skipShadows: true, skipPointLights: true }).opaque);
+    const boatChunks = createInterleavedChunks(buildVoxelMesh(buildBoatGrid(), [0.5,0.8,0.4], { skipShadows: true, skipPointLights: true }).opaque);
+    const cloudConfigs = [
+      { chunks: createInterleavedChunks(buildVoxelMesh(buildCloudGrid(10, 6), [0,1,0], { skipShadows: true, skipPointLights: true, centerOrigin: true }).opaque), x: 8, y: 34, z: 12, speed: 0.55 },
+      { chunks: createInterleavedChunks(buildVoxelMesh(buildCloudGrid(12, 7), [0,1,0], { skipShadows: true, skipPointLights: true, centerOrigin: true }).opaque), x: 36, y: 35.5, z: 20, speed: 0.42 },
+      { chunks: createInterleavedChunks(buildVoxelMesh(buildCloudGrid(8, 5), [0,1,0], { skipShadows: true, skipPointLights: true, centerOrigin: true }).opaque), x: 22, y: 33, z: 42, speed: 0.65 },
+      { chunks: createInterleavedChunks(buildVoxelMesh(buildCloudGrid(9, 6), [0,1,0], { skipShadows: true, skipPointLights: true, centerOrigin: true }).opaque), x: 48, y: 36, z: 36, speed: 0.48 },
+    ];
+    function buildUnitCubeChunks(hexColor, emissiveVal = 0) {
+      const g = new VoxelGrid(1, 1, 1);
+      g.set(0, 0, 0, emissiveVal > 0 ? MAT.LANTERN : MAT.SAIL_CLOTH, hexColor, 0);
+      return createInterleavedChunks(buildVoxelMesh(g, [0,1,0], { skipShadows: true, skipPointLights: true, centerOrigin: true }).opaque);
+    }
+    const smokeCubeChunks = buildUnitCubeChunks(0xeef2f6, 0);
+    const petalCubeChunks = buildUnitCubeChunks(0xffb3c6, 0);
+    const fireflyCubeChunks = buildUnitCubeChunks(0xffe066, 1);
+
+    let currentStage = 3, currentTimeKey = 'noon', currentTool = 'orbit', autoRotate = true;
+    let currentGrid = null, opaqueChunks = null, waterChunks = null, lastTriCount = 0;
+
+    const particles = [];
+    for (let i = 0; i < 42; i++) particles.push({ type: i < 14 ? 'smoke' : i < 26 ? 'petal' : 'firefly', x: 28, y: 15, z: 28, vx: 0, vy: 0, vz: 0, life: Math.random(), scale: 0.3 });
+    function resetParticle(p) {
+      if (p.type === 'smoke') {
+        if (currentStage === 1) { p.x = 32.5; p.y = 12.2; p.z = 25.5; }
+        else if (currentStage === 2) { p.x = 35.0; p.y = 21.3; p.z = 16.0; }
+        else { p.x = 35.0; p.y = 24.3; p.z = 16.0; }
+        p.vx = 0.25 + Math.random()*0.2; p.vy = 1.2 + Math.random()*0.6; p.vz = (Math.random()-0.5)*0.25; p.scale = 0.42;
+      } else if (p.type === 'petal') {
+        p.x = 26.5 + (Math.random()-0.5)*5.0; p.y = 16.5 + Math.random()*2.5; p.z = 11.5 + (Math.random()-0.5)*5.0;
+        p.vx = 0.4 + Math.random()*0.4; p.vy = -0.7 - Math.random()*0.35; p.vz = 0.25 + (Math.random()-0.5)*0.4; p.scale = 0.22;
+      } else {
+        p.x = 20 + Math.random()*25; p.y = 10 + Math.random()*6; p.z = 16 + Math.random()*26;
+        p.vx = (Math.random()-0.5)*0.7; p.vy = (Math.random()-0.5)*0.35; p.vz = (Math.random()-0.5)*0.7; p.scale = 0.16;
+      }
+      p.life = 0;
+    }
+    particles.forEach(p => { resetParticle(p); p.life = Math.random(); });
+
+    function updateStats() {
+      const stageNames = { 1: 'Khai hoang', 2: 'Lập trại', 3: 'Thị trấn' };
+      const solid = currentGrid ? currentGrid.countSolid() : 0;
+      document.getElementById('stats-line').textContent = `Giai đoạn ${currentStage}: ${stageNames[currentStage]} · ${solid.toLocaleString('vi-VN')} voxels · ${lastTriCount.toLocaleString('vi-VN')} tris`;
+    }
+    function rebuildMeshFromGrid() {
+      const preset = PRESETS[currentTimeKey];
+      const { opaque, water } = buildVoxelMesh(currentGrid, normVec3(preset.sunDir));
+      disposeChunks(opaqueChunks); disposeChunks(waterChunks);
+      opaqueChunks = createInterleavedChunks(opaque); waterChunks = createInterleavedChunks(water);
+      lastTriCount = ((opaque.idx.length + water.idx.length) / 3) | 0;
+      updateStats();
+    }
+    function rebuildScene(stageChanged = true) {
+      if (stageChanged || !currentGrid) currentGrid = buildValleyScene(currentStage);
+      rebuildMeshFromGrid();
+    }
+
+    const camState = { yaw: 0.72, pitch: 0.54, dist: 64, target: [28, 12.5, 28], tYaw: 0.72, tPitch: 0.54, tDist: 64, tTarget: [28, 12.5, 28] };
+    function getCamPosAndBasis() {
+      const cp = Math.cos(camState.pitch), sp = Math.sin(camState.pitch), cy = Math.cos(camState.yaw), sy = Math.sin(camState.yaw);
+      const eye = [camState.target[0] + camState.dist*cp*sy, camState.target[1] + camState.dist*sp, camState.target[2] + camState.dist*cp*cy];
+      return { eye, ...mat4LookAt(eye, camState.target, [0, 1, 0]) };
+    }
+
+    function raycastVoxel(origin, dir, maxDist = 140) {
+      let x = Math.floor(origin[0]), y = Math.floor(origin[1]), z = Math.floor(origin[2]);
+      const stepX = dir[0] > 0 ? 1 : -1, stepY = dir[1] > 0 ? 1 : -1, stepZ = dir[2] > 0 ? 1 : -1;
+      const tDeltaX = Math.abs(1/(dir[0]||1e-8)), tDeltaY = Math.abs(1/(dir[1]||1e-8)), tDeltaZ = Math.abs(1/(dir[2]||1e-8));
+      let tMaxX = (dir[0] > 0 ? x+1-origin[0] : origin[0]-x) * tDeltaX;
+      let tMaxY = (dir[1] > 0 ? y+1-origin[1] : origin[1]-y) * tDeltaY;
+      let tMaxZ = (dir[2] > 0 ? z+1-origin[2] : origin[2]-z) * tDeltaZ;
+      let nx = 0, ny = 0, nz = 0;
+      for (let i = 0; i < 240; i++) {
+        if (currentGrid.inBounds(x, y, z)) {
+          const m = currentGrid.get(x, y, z);
+          if (m !== MAT.AIR && m !== MAT.WATER) return { x, y, z, nx, ny, nz, mat: m };
+        }
+        if (tMaxX < tMaxY) {
+          if (tMaxX < tMaxZ) { if (tMaxX > maxDist) break; x += stepX; tMaxX += tDeltaX; nx = -stepX; ny = 0; nz = 0; }
+          else { if (tMaxZ > maxDist) break; z += stepZ; tMaxZ += tDeltaZ; nx = 0; ny = 0; nz = -stepZ; }
+        } else {
+          if (tMaxY < tMaxZ) { if (tMaxY > maxDist) break; y += stepY; tMaxY += tDeltaY; nx = 0; ny = -stepY; nz = 0; }
+          else { if (tMaxZ > maxDist) break; z += stepZ; tMaxZ += tDeltaZ; nx = 0; ny = 0; nz = -stepZ; }
+        }
+      }
+      return null;
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg; el.style.opacity = '1';
+      clearTimeout(el._timer); el._timer = setTimeout(() => { el.style.opacity = '0'; }, 2400);
+    }
+
+    function handlePlantClick(clientX, clientY) {
+      if (currentTool === 'orbit') return;
+      const rect = canvas.getBoundingClientRect();
+      const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1, ndcY = 1 - ((clientY - rect.top) / rect.height) * 2;
+      const tanHalf = Math.tan(34 * Math.PI / 360), aspect = rect.width / rect.height, cam = getCamPosAndBasis();
+      const rayDir = normVec3([
+        cam.forward[0] + ndcX * aspect * tanHalf * cam.right[0] + ndcY * tanHalf * cam.up[0],
+        cam.forward[1] + ndcX * aspect * tanHalf * cam.right[1] + ndcY * tanHalf * cam.up[1],
+        cam.forward[2] + ndcX * aspect * tanHalf * cam.right[2] + ndcY * tanHalf * cam.up[2],
+      ]);
+      const hit = raycastVoxel(cam.eye, rayDir);
+      if (!hit) return;
+      const px = hit.x + hit.nx, py = hit.y + hit.ny, pz = hit.z + hit.nz;
+      if (!currentGrid.inBounds(px, py, pz) || hit.ny !== 1) {
+        showToast('Hãy nhấp vào mặt trên của ô đất cỏ hoặc cát để đặt!');
+        return;
+      }
+      if (currentTool === 'oak') plantOakTree(currentGrid, px, py, pz, 0.95, true);
+      else if (currentTool === 'sakura') plantSakuraTree(currentGrid, px, py, pz);
+      else if (currentTool === 'lantern') buildStreetLantern(currentGrid, px, py, pz);
+      rebuildMeshFromGrid();
+    }
+
+    let dragging = false, dragMode = 'orbit', lastX = 0, lastY = 0, downX = 0, downY = 0;
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
+    canvas.addEventListener('pointerdown', e => {
+      canvas.setPointerCapture(e.pointerId); dragging = true;
+      dragMode = (e.button === 2 || e.shiftKey) ? 'pan' : 'orbit';
+      lastX = downX = e.clientX; lastY = downY = e.clientY;
+    });
+    canvas.addEventListener('pointermove', e => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      if (dragMode === 'orbit') {
+        camState.tYaw -= dx * 0.0075;
+        camState.tPitch = Math.max(0.12, Math.min(1.42, camState.tPitch + dy * 0.0065));
+      } else {
+        const cam = getCamPosAndBasis(), panScale = camState.tDist * 0.0014;
+        camState.tTarget[0] = Math.max(8, Math.min(48, camState.tTarget[0] - cam.right[0]*dx*panScale + cam.up[0]*dy*panScale));
+        camState.tTarget[1] = Math.max(4, Math.min(28, camState.tTarget[1] + cam.up[1]*dy*panScale));
+        camState.tTarget[2] = Math.max(8, Math.min(48, camState.tTarget[2] - cam.right[2]*dx*panScale + cam.up[2]*dy*panScale));
+      }
+    });
+    canvas.addEventListener('pointerup', e => {
+      if (dragging && e.button === 0 && Math.hypot(e.clientX - downX, e.clientY - downY) < 5) handlePlantClick(e.clientX, e.clientY);
+      dragging = false;
+    });
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      camState.tDist = Math.max(20, Math.min(115, camState.tDist * (1 + e.deltaY * 0.001)));
+    }, { passive: false });
+
+    function syncButtonClasses() {
+      document.querySelectorAll('.stage-btn').forEach(btn => btn.classList.toggle('active', Number(btn.dataset.stage) === currentStage));
+      document.querySelectorAll('.time-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.time === currentTimeKey));
+      document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tool === currentTool));
+      canvas.style.cursor = currentTool === 'orbit' ? 'grab' : 'crosshair';
+    }
+    document.querySelectorAll('.stage-btn').forEach(btn => btn.addEventListener('click', () => { currentStage = Number(btn.dataset.stage); syncButtonClasses(); rebuildScene(true); }));
+    document.querySelectorAll('.time-btn').forEach(btn => btn.addEventListener('click', () => { currentTimeKey = btn.dataset.time; syncButtonClasses(); rebuildScene(false); }));
+    document.querySelectorAll('.tool-btn').forEach(btn => btn.addEventListener('click', () => { currentTool = btn.dataset.tool; syncButtonClasses(); if (currentTool !== 'orbit') showToast('Nhấp chuột vào mặt cỏ để trồng/đặt ngay!'); }));
+    document.getElementById('btn-autorotate').addEventListener('click', e => { autoRotate = !autoRotate; e.target.textContent = `Tự xoay: ${autoRotate ? 'Bật' : 'Tắt'}`; });
+    document.getElementById('btn-reset-cam').addEventListener('click', () => { camState.tYaw = 0.72; camState.tPitch = 0.54; camState.tDist = 64; camState.tTarget = [28, 12.5, 28]; });
+    document.getElementById('btn-rebuild').addEventListener('click', () => { rebuildScene(true); showToast('Đã làm mới cảnh!'); });
+    document.getElementById('btn-export-glb').addEventListener('click', () => {
+      const glbBytes = exportGridToGLB(cloneGridWithDynamics(currentGrid, currentStage), 0.5);
+      const url = URL.createObjectURL(new Blob([glbBytes], { type: 'model/gltf-binary' }));
+      const a = document.createElement('a'); a.href = url; a.download = `whisperwood_stage${currentStage}.glb`; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast(`Đã xuất whisperwood_stage${currentStage}.glb (${(glbBytes.byteLength/1024).toFixed(0)} KB)!`);
+    });
+
+    syncButtonClasses();
+    rebuildScene(true);
+
+    let lastTs = performance.now();
+    function frame(now) {
+      const dt = Math.min(0.05, (now - lastTs) * 0.001); lastTs = now;
+      const t = now * 0.001, dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = Math.floor(canvas.clientWidth * dpr), h = Math.floor(canvas.clientHeight * dpr);
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+      gl.viewport(0, 0, w, h);
+
+      if (autoRotate && !dragging) camState.tYaw += dt * 0.14;
+      const damp = 1 - Math.exp(-dt * 10);
+      camState.yaw += (camState.tYaw - camState.yaw) * damp;
+      camState.pitch += (camState.tPitch - camState.pitch) * damp;
+      camState.dist += (camState.tDist - camState.dist) * damp;
+      for (let i = 0; i < 3; i++) camState.target[i] += (camState.tTarget[i] - camState.target[i]) * damp;
+
+      const aspect = Math.max(0.1, w / Math.max(1, h)), fovRad = 34 * Math.PI / 180;
+      const cam = getCamPosAndBasis(), projView = mat4Mul(mat4Perspective(fovRad, aspect, 0.5, 300), cam.mat);
+      const preset = PRESETS[currentTimeKey], sunDir = normVec3(preset.sunDir);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+      gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.useProgram(skyProg);
+      for (const loc of VOX_LOC_LIST) gl.disableVertexAttribArray(loc);
+      gl.enableVertexAttribArray(skyLoc);
+      gl.bindBuffer(gl.ARRAY_BUFFER, skyQuadBuf);
+      gl.vertexAttribPointer(skyLoc, 2, gl.FLOAT, false, 0, 0);
+      gl.uniform3fv(gl.getUniformLocation(skyProg, 'uCamForward'), cam.forward);
+      gl.uniform3fv(gl.getUniformLocation(skyProg, 'uCamRight'), cam.right);
+      gl.uniform3fv(gl.getUniformLocation(skyProg, 'uCamUp'), cam.up);
+      gl.uniform1f(gl.getUniformLocation(skyProg, 'uAspect'), aspect);
+      gl.uniform1f(gl.getUniformLocation(skyProg, 'uTanHalfFov'), Math.tan(fovRad * 0.5));
+      gl.uniform3fv(gl.getUniformLocation(skyProg, 'uSkyZenith'), preset.skyZenith);
+      gl.uniform3fv(gl.getUniformLocation(skyProg, 'uSkyHorizon'), preset.skyHorizon);
+      gl.uniform3fv(gl.getUniformLocation(skyProg, 'uSunDir'), sunDir);
+      gl.uniform3fv(gl.getUniformLocation(skyProg, 'uSunColor'), preset.sunColor);
+      gl.uniform1f(gl.getUniformLocation(skyProg, 'uNightBoost'), preset.nightBoost);
+      gl.uniform1f(gl.getUniformLocation(skyProg, 'uTime'), t);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+      gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.useProgram(voxelProg);
+      gl.disableVertexAttribArray(skyLoc);
+      for (const loc of VOX_LOC_LIST) gl.enableVertexAttribArray(loc);
+
+      const uModel = gl.getUniformLocation(voxelProg, 'uModel');
+      const uIsDyn = gl.getUniformLocation(voxelProg, 'uIsDynamic');
+      const uIsWater = gl.getUniformLocation(voxelProg, 'uIsWater');
+      gl.uniformMatrix4fv(gl.getUniformLocation(voxelProg, 'uProjView'), false, projView);
+      gl.uniform3fv(gl.getUniformLocation(voxelProg, 'uSunDir'), sunDir);
+      gl.uniform3fv(gl.getUniformLocation(voxelProg, 'uSunColor'), preset.sunColor);
+      gl.uniform3fv(gl.getUniformLocation(voxelProg, 'uSkyColor'), preset.skyColor);
+      gl.uniform3fv(gl.getUniformLocation(voxelProg, 'uGroundColor'), preset.groundColor);
+      gl.uniform3fv(gl.getUniformLocation(voxelProg, 'uFogColor'), preset.fogColor);
+      gl.uniform3fv(gl.getUniformLocation(voxelProg, 'uCamPos'), cam.eye);
+      gl.uniform1f(gl.getUniformLocation(voxelProg, 'uNightBoost'), preset.nightBoost);
+      gl.uniform1f(gl.getUniformLocation(voxelProg, 'uTime'), t);
+
+      gl.uniformMatrix4fv(uModel, false, mat4Identity()); gl.uniform1f(uIsDyn, 0.0); gl.uniform1f(uIsWater, 0.0);
+      drawChunks(opaqueChunks);
+
+      gl.uniform1f(uIsDyn, 1.0);
+      if (currentStage === 3) {
+        gl.uniformMatrix4fv(uModel, false, mat4Mul(mat4Transform(14.5, 24.5, 19.5, 0, 0, t * 0.85), mat4Transform(-7.5, -7.5, -1.5, 0, 0, 0)));
+        drawChunks(sailChunks);
+      }
+      if (currentStage >= 2) {
+        gl.uniformMatrix4fv(uModel, false, mat4Mul(
+          mat4Transform(36.5, 9.05 + 0.08 * Math.sin(t * 1.9), 39.5, 0.03 * Math.cos(t * 1.5), 0.12 * Math.sin(t * 0.7), 0.035 * Math.sin(t * 1.3)),
+          mat4Transform(-2.5, -1.0, -3.5, 0, 0, 0)
+        ));
+        drawChunks(boatChunks);
+      }
+      for (const cl of cloudConfigs) {
+        gl.uniformMatrix4fv(uModel, false, mat4Transform(((cl.x + t * cl.speed + 18) % 96) - 20, cl.y, cl.z, 0, 0, 0));
+        drawChunks(cl.chunks);
+      }
+      for (const p of particles) {
+        p.life += dt * (p.type === 'smoke' ? 0.35 : p.type === 'petal' ? 0.25 : 0.4);
+        if (p.life >= 1.0) resetParticle(p);
+        p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+        if (p.type === 'petal' && currentStage < 2) continue;
+        if (p.type === 'firefly' && preset.nightBoost < 0.65) continue;
+        const s = p.type === 'smoke' ? p.scale * (0.7 + p.life * 0.9) * (1 - p.life * 0.3) : p.scale;
+        gl.uniformMatrix4fv(uModel, false, mat4Transform(p.x, p.y, p.z, p.life * 2.0, p.life * 1.4, 0, s, s, s));
+        drawChunks(p.type === 'smoke' ? smokeCubeChunks : p.type === 'petal' ? petalCubeChunks : fireflyCubeChunks);
+      }
+
+      gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+      gl.uniformMatrix4fv(uModel, false, mat4Identity()); gl.uniform1f(uIsDyn, 0.0); gl.uniform1f(uIsWater, 1.0);
+      drawChunks(waterChunks);
+      gl.depthMask(true); gl.disable(gl.BLEND);
+
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

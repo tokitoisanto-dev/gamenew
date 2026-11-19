@@ -1,0 +1,9 @@
+{
+  "name": "whisperwood-voxel-kit",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Procedural 3D Voxel Diorama & Asset Kit for building/resource management games",
+  "scripts": {
+    "export-glb": "node scripts/export-glb.mjs"
+  }
+}
